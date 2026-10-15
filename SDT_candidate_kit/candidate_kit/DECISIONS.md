@@ -1,0 +1,7 @@
+# DECISIONS.md
+
+1. **Indexes.** `employees`: unique `emp_code` (identity), `(department, joined_on)` (headcount, trend), `(department, emp_code)` (employee list). `attendance_logs`: unique `(emp_code, date)` (race guard, monthly, joins), `(date desc, emp_code)` (list order), `(status, date desc, emp_code)`, `(emp_code, punch_in desc)` (punch-out), `(date, late_minutes, emp_code)` (leaderboard, covered). Rejected: a lone `emp_code` or `date` index (already prefixes) and copying `department` onto every log (goes stale).
+2. **Punch-in race.** Both requests compute the same `(emp_code, date)` and call `insert_one`. The unique index lets MongoDB accept one; the other gets `DuplicateKeyError`, which becomes 409. There is no check-then-insert.
+3. **Ties.** Rank is computed with `$rank` (1, 2, 2, 4) *before* the limit, and I keep `rank <= limit`. Tied employees at the cutoff all appear, so more than `limit` rows can return.
+4. **Headcount.** The pipeline starts from `employees`, filtered by `joined_on <= month end`, and left-joins logs with `$lookup`/`$unwind` (preserving empty). No logs still means one counted employee.
+5. **100x data.** Stop scanning raw logs for analytics: keep pre-aggregated per-employee-per-month totals, updated on punch/correction, and build indexes in a migration, not at app startup.
